@@ -1,0 +1,138 @@
+---
+title: "Exercise Prediction Assignment."
+author: "Curtis R. Bailey"
+date: "July 23, 2016"
+output: html_document
+---
+
+
+## Introduction
+
+According to the Coursera Machine Learning course assigment instructions, something that people do regularly is quantify how much of a particular activity they do. However, they rarely quantify how well they do it. Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. Using data from accelerometers, one might be able to develop a predictor.
+
+The overall goal of the assignment is to develop a prediction model for the manner in which test subjects have exercised using data from accelerometers on the belt, forearm, arm, and dumbell. We will then use the prediction model to predict 20 different test cases.
+
+
+## The Data
+
+The data was generated from six participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. This is the "classe" variable in the training set. 
+
+For more information on this and how the data was generated, check the following website: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The training data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+## The Assignment
+
+### Get and Clean the Data
+
+The first step in this assignment is to load and get familiar with the data.
+
+```{r, echo=TRUE}
+trn <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+str(trn)
+
+tst <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+str(tst)
+```
+
+We first note that time has no relavance to this assessment and that the rest of the first 7 columns are not measurement data. 
+
+We also note that several of the columns have no values for their measurements. 
+
+Therefore, we remove the first 7 columns and use "na.strings" to identify the columns that have null values, retaining only those columns with measurements.
+
+```{r, echo=TRUE}
+tst <- tst[, 8:160]
+na.strings = c("","NA","#DIV/0!")
+tst <- tst[, apply(tst, 2, function(x) !any(is.na(x)))]
+```
+
+We then use the resulting column names to make the same changes to the training data,  
+
+```{r, echo=TRUE}
+trn <- trn[, 8:160]
+trn <- trn[, c(names(tst[1:52]), "classe")]
+```
+
+The last step in preparing the data is to partition it (60/40) in order to have a set of data for training and a set of data for cross-validating our prediction model before using it for the final prediction test. 
+
+```{r, echo=TRUE}
+library(caret, quietly = TRUE) #Packages for partitioning and modelling.
+library(rpart, quietly = TRUE)
+
+set.seed(12345) #Set a seed to enable reproducing the results.
+
+tmp <- createDataPartition(trn$classe, p=0.6, list=FALSE)
+train <- trn[tmp,]
+pre_test <- trn[-tmp,]
+remove(tmp) #Free up some RAM.
+
+dim(train)
+dim(pre_test)
+```
+
+### Choose the Model
+
+The Decision Tree.
+
+Using a Decision Tree, we first train the model on the 'train' data set and then cross-validate using the 'pre_test' data set we created.
+
+```{r, echo=TRUE}
+library(rattle, quietly = TRUE)
+set.seed(12345)
+DT_model <- rpart(classe ~ ., data=train, method="class")
+fancyRpartPlot(DT_model)
+
+DT_predict <- predict(DT_model, newdata=pre_test, type = "class")  
+confusionMatrix(DT_predict, pre_test$classe) 
+```
+
+Overall statistics from the Decision Tree model show a 73% accuracy with an out-of-sample error of 27%.
+
+
+
+The Random Forest.
+
+The Caret package has a training function that can be used with Random Forest to select the best model. 
+
+This training function tries several models and automatically selects the 'best' one. It also has cross-validation built in. However, we will still cross validate using the 'pre_test' data.
+
+It may take several minutes to complete, which is one of this function's negative aspects.
+
+```{r, echo=TRUE}
+library(randomForest, quietly = TRUE)
+library(e1071, quietly = TRUE)
+
+set.seed(12345)
+control <- trainControl(method="cv", number=5, allowParallel=T, verbose=F)
+RF_model <- train(classe ~ ., data=train, method='rf', trControl=control, verbose=F)
+
+RF_predict <- predict(RF_model, newdata=train)
+confusionMatrix(RF_predict, train$classe)
+
+RF_preT <- predict(RF_model, newdata=pre_test)
+confusionMatrix(RF_preT, pre_test$classe)
+```
+
+Overall statistics from the Random Forest model show a 99% accuracy wwith an out-of-sample error of 1%.
+
+
+## Summary
+
+As you recall, the goal of this assigment was to develop a prediction that will predict the manner in which the exercises were done.
+
+As was shown, the accuracy of the Decision Tree was 73%. The accuracy of the Random Forest model was 99%. Therefore, we will use the Random Forest method to predict the 20 test cases provided in the testing (tst) data.
+
+
+## Final Prediction
+
+```{r, echo=TRUE}
+prediction <- predict(RF_model, newdata = tst)
+prediction
+```
+
